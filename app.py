@@ -22,7 +22,7 @@ def load_model():
     global model
     if model is None:
         logger.info("Loading Whisper model...")
-        model = whisper.load_model("base")
+        model = whisper.load_model("tiny")
         logger.info("Whisper model loaded successfully")
     return model
 
