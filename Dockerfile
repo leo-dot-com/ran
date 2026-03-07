@@ -9,6 +9,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
+# Upgrade pip, setuptools, and wheel FIRST
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
 # Copy requirements first for better caching
 COPY requirements.txt .
 
