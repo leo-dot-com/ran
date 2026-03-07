@@ -2,33 +2,36 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-# Install system dependencies (ffmpeg for audio, curl for healthcheck, compilers for safety)
+# Install system dependencies (ffmpeg, compilers, git)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     curl \
     gcc \
     g++ \
     make \
+    git \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Upgrade pip, setuptools, and wheel to the latest versions
+# Upgrade pip, setuptools, and wheel
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# (Optional) Verify setuptools is installed – for debugging
-RUN pip show setuptools
+# (Optional) Verify setuptools is importable
+RUN python -c "import setuptools; print('setuptools version:', setuptools.__version__)"
 
-# Copy requirements file
-COPY requirements.txt .
-
-# Install torch and numpy first (they are pre-built wheels, no compilation issues)
+# Install torch and numpy first (they are pre‑built wheels)
 RUN pip install --no-cache-dir torch==2.0.1 numpy==1.24.3
 
-# Install whisper without build isolation, using the already-upgraded setuptools
-RUN pip install --no-cache-dir --no-build-isolation openai-whisper==20231117
+# Clone whisper and install manually using setuptools
+RUN git clone https://github.com/openai/whisper.git && \
+    cd whisper && \
+    git checkout 20231117 && \
+    python setup.py install
 
-# Install remaining dependencies (flask, flask-cors, gunicorn)
-RUN pip install --no-cache-dir flask==2.3.3 flask-cors==4.0.0 gunicorn==21.2.0
+# Copy requirements.txt and install remaining packages
+COPY requirements.txt .
+# Exclude openai-whisper from requirements.txt (already installed)
+RUN grep -v "openai-whisper" requirements.txt | xargs pip install --no-cache-dir
 
 # Copy application code
 COPY app.py .
