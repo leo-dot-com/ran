@@ -3,7 +3,7 @@ FROM python:3.9-slim AS builder
 
 WORKDIR /app
 
-# Install system build dependencies (including git for cloning whisper)
+# Install system build dependencies (git for cloning, compilers for safety)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     curl \
@@ -25,12 +25,18 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 # Install torch and numpy first (pre‑built wheels)
 RUN pip install --no-cache-dir torch==2.0.1 numpy==1.24.3
 
-# Install openai-whisper directly from GitHub using the correct tag v20231117
-RUN pip install --no-cache-dir git+https://github.com/openai/whisper.git@v20231117
+# Install whisper's additional dependencies (tqdm, more-itertools)
+RUN pip install --no-cache-dir tqdm==4.66.1 more-itertools==10.1.0
 
-# Copy requirements file and install remaining packages (excluding whisper)
+# Clone whisper at the correct tag and install manually WITHOUT build isolation
+RUN git clone --branch v20231117 https://github.com/openai/whisper.git && \
+    cd whisper && \
+    python setup.py install --no-deps
+
+# Copy requirements.txt and install remaining packages (excluding openai-whisper)
 COPY requirements.txt .
-RUN grep -v "openai-whisper" requirements.txt | xargs pip install --no-cache-dir
+RUN sed -i '/openai-whisper/d' requirements.txt && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy your application code
 COPY app.py .
@@ -40,7 +46,7 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-# Install runtime system dependencies (ffmpeg for audio processing, curl for health checks)
+# Install runtime system dependencies (ffmpeg for audio, curl for health checks)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     curl \
@@ -62,7 +68,7 @@ USER appuser
 # Expose the port your app listens on
 EXPOSE 5000
 
-# Health check (endpoint must exist in your app)
+# Health check (ensure your app has a /health endpoint)
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:5000/health || exit 1
 
