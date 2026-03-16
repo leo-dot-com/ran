@@ -67,35 +67,41 @@ def analyze_ran():
                 fp16=False
             )
 
-            # Extract words from segments (Whisper stores word timestamps inside segments)
+            # Extract words from segments, trimming whitespace
             words = []
             for segment in result.get('segments', []):
                 for word_info in segment.get('words', []):
                     words.append({
-                        'word': word_info['word'],
+                        'word': word_info['word'].strip(),
                         'start': word_info['start'],
                         'end': word_info['end']
                     })
 
-            # Use the duration provided by Whisper (or fallback to 0)
-            duration = result.get('duration', 0)
+            # Compute total duration from the last word's end, or from segments, or fallback to 0
+            total_duration = 0
+            if words:
+                total_duration = words[-1]['end']
+            elif result.get('segments'):
+                total_duration = result['segments'][-1]['end']
+            else:
+                total_duration = result.get('duration', 0)
 
             # If no word timestamps were generated, create synthetic ones
             if not words and result['text'].strip():
                 logger.info("No word timestamps from Whisper, generating synthetic ones")
                 text_words = result['text'].split()
-                if text_words and duration > 0:
-                    seg_duration = duration / len(text_words)
+                if text_words and total_duration > 0:
+                    seg_duration = total_duration / len(text_words)
                     words = []
                     for i, w in enumerate(text_words):
                         words.append({
-                            'word': w,
+                            'word': w.strip(),
                             'start': i * seg_duration,
                             'end': (i + 1) * seg_duration
                         })
 
             # Process results
-            analysis = analyze_ran_performance(words, result['text'], duration, expected_list, test_type)
+            analysis = analyze_ran_performance(words, result['text'], total_duration, expected_list, test_type)
 
             return jsonify({
                 'success': True,
@@ -134,7 +140,6 @@ def analyze_ran_performance(words, text, total_duration, expected_items, test_ty
             'naming_speed_wps': 0,
             'consistency_score': 0,
             'ran_score': 0,
-            'dyslexia_likelihood': 'high'
         }
 
     # Prepare expected list (lowercase)
@@ -142,7 +147,7 @@ def analyze_ran_performance(words, text, total_duration, expected_items, test_ty
     total_items = len(expected_lower)
 
     # Extract transcribed words (lowercase, stripped)
-    transcribed_words = [w['word'].strip().lower() for w in words]
+    transcribed_words = [w['word'].lower() for w in words]
 
     # Calculate accuracy and collect response times
     correct_count = 0
@@ -151,7 +156,7 @@ def analyze_ran_performance(words, text, total_duration, expected_items, test_ty
     response_times = []
 
     for i, word_info in enumerate(words):
-        word = word_info['word'].strip().lower()
+        word = word_info['word'].lower()
         start_time = word_info['start']
         end_time = word_info['end']
 
@@ -169,7 +174,7 @@ def analyze_ran_performance(words, text, total_duration, expected_items, test_ty
             else:
                 errors += 1
                 # Check if next word is a self‑correction
-                if i + 1 < len(words) and words[i+1]['word'].strip().lower() == expected_word:
+                if i + 1 < len(words) and words[i+1]['word'].lower() == expected_word:
                     self_corrections += 1
 
     # Hesitations: response times > 1 second
@@ -188,14 +193,6 @@ def analyze_ran_performance(words, text, total_duration, expected_items, test_ty
     consistency_score = max(0, 100 - (hesitations * 10 + errors * 5))
     ran_score = (accuracy * 0.4) + (consistency_score * 0.3) + (max(0, 100 - (avg_response_time * 20)) * 0.3)
 
-    # Dyslexia likelihood
-    if ran_score >= 80:
-        dyslexia_likelihood = 'low'
-    elif ran_score >= 60:
-        dyslexia_likelihood = 'moderate'
-    else:
-        dyslexia_likelihood = 'high'
-
     return {
         'total_time': total_duration,
         'items_correct': correct_count,
@@ -209,7 +206,6 @@ def analyze_ran_performance(words, text, total_duration, expected_items, test_ty
         'naming_speed_wps': naming_speed_wps,
         'consistency_score': consistency_score,
         'ran_score': ran_score,
-        'dyslexia_likelihood': dyslexia_likelihood
     }
 
 if __name__ == '__main__':
